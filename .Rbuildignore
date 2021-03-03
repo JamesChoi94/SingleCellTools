@@ -1,0 +1,4 @@
+^renv$
+^renv\.lock$
+^SingleCellTools\.Rproj$
+^\.Rproj\.user$
