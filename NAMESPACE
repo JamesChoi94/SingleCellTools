@@ -2,6 +2,8 @@
 
 export(PlotLR)
 export(StandardLR)
+export(StandardLR2)
 import(dplyr)
 import(tibble)
+importFrom(BiocParallel,bpmapply)
 importFrom(rlang,"!!")
