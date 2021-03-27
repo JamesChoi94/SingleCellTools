@@ -1,23 +1,28 @@
 Package: SingleCellTools
-Title: What the Package Does (One Line, Title Case)
+Title: Various Wrapper Functions + Tools For Single-Cell 'Omics
 Version: 0.0.0.9000
 Authors@R: 
-    person(given = "First",
-           family = "Last",
+    person(given = "James",
+           family = "Choi",
            role = c("aut", "cre"),
-           email = "first.last@example.com",
+           email = "seungchoi94@gmail.com",
            comment = c(ORCID = "YOUR-ORCID-ID"))
-Description: What the package does (one paragraph).
-License: `use_mit_license()`, `use_gpl3_license()` or friends to
-    pick a license
-Encoding: UTF-8
-LazyData: true
-Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.1.1
+Description: 
+  To avoid error message "DLL [PACKAGE_NAME] not found: maybe not installed 
+  for this architecture?", run the following: 
+  devtools::install(pkg, args = c("--no-multiarch"))
+License: 
+  `use_mit_license()`, `use_gpl3_license()` or friends to pick a license.
+Encoding: 
+  UTF-8
+LazyData: 
+  true
+Roxygen: 
+  list(markdown = TRUE)
+RoxygenNote: 
+  7.1.1
 Imports:
   dplyr (>= 1.0.4),
   Seurat (>= 3.0.0),
   tibble (>= 3.1.0),
   BiocParallel
-  
-  

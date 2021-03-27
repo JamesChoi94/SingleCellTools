@@ -47,7 +47,6 @@
 #' @export
 #'
 
-
 StandardLR2 <- function(
   seurat.object,
   ref.path = NULL,
@@ -138,10 +137,6 @@ StandardLR2 <- function(
     X = lr_data[is_factor],
     FUN = as.character
   )
-  # active_idents <- as.character(x = slot(
-  #   object = seurat.object,
-  #   name = 'active.ident'
-  # ))
   lr_data <- cbind(active_idents, lr_data)
   message('Using expression values for ', ncol(lr_data)-1, ' genes across ',
           nrow(lr_data), ' cells.')
@@ -175,8 +170,9 @@ StandardLR2 <- function(
 
   # Determine which genes meet minimum percent detection threshold
   minpct_genes <- sapply(
+    FUN = function(x, min.pct) {any(x > min.pct)},
     X = exp_pct[sapply(exp_pct, is.numeric)],
-    FUN = function(x) any(x > min.pct)
+    min.pct = min.pct
   )
   minpct_genes <- names(which(minpct_genes))
   ligand_detected <- ligand_genes %in% minpct_genes
@@ -185,8 +181,6 @@ StandardLR2 <- function(
   receptor_genes <- receptor_genes[ligand_detected & receptor_detected]
   lr_ref <- lr_ref[ligand_detected & receptor_detected,]
   rm(minpct_genes)
-
-  # lr_genes <- sort(unique(minpct_genes))
 
   # Generate all possible combinations of cell-type pairs (and split.by). Create
   # columns with cell-type counts for permutation test sampling.
@@ -266,27 +260,40 @@ StandardLR2 <- function(
   lr_data_ligands <- as.matrix(as.data.table(lr_data)[, ..ligand_genes])
   lr_data_receptors <- as.matrix(as.data.table(lr_data)[, ..receptor_genes])
 
+  # pvals <- CalculateScorePvals(
+  #   exp.scores = exp_scores,
+  #   total.count = list(nrow(lr_data)),
+  #   resample = list(resample),
+  #   lr.data.ligands = list(lr_data_ligands),
+  #   lr.data.receptors = list(lr_data_receptors),
+  #   l.count = var_set$Ligand_cell_count,
+  #   r.count = var_set$Receptor_cell_count,
+  #   BPPPARAM = BPPARAM
+  # )
   pvals <- Matrix::t(
     x = bpmapply(
       FUN = CalculateScorePvals,
       exp.scores = exp_scores,
-      total.count = list(nrow(lr_data)),
-      resample = list(resample),
-      lr.data.ligands = list(lr_data_ligands),
-      lr.data.receptors = list(lr_data_receptors),
       l.count = var_set$Ligand_cell_count,
       r.count = var_set$Receptor_cell_count,
+      MoreArgs = list(
+        total.count = nrow(lr_data),
+        resample = resample,
+        lr.data.ligands = lr_data_ligands,
+        lr.data.receptors = lr_data_receptors,
+        Sample_Random_Cells = Sample_Random_Cells,
+        Get_Pvals
+      ),
       BPPARAM = BPPARAM
     )
   )
 
-  #
   # CalculateScorePvals(
   #   exp.scores = exp_scores[[1]],
   #   total.count = nrow(lr_data),
   #   resample = 1000,
-  #   # lr.data.ligands = lr_data_ligands,
-  #   # lr.data.receptors = lr_data_receptors,
+  #   lr.data.ligands = lr_data_ligands,
+  #   lr.data.receptors = lr_data_receptors,
   #   l.count = var_set$Ligand_cell_count[1],
   #   r.count = var_set$Receptor_cell_count[1]
   # )
@@ -322,20 +329,20 @@ StandardLR2 <- function(
   tmp_pct <- exp_pct %>% as.matrix()
   tmp_pct_l <- c(tmp_pct[index_x, index_l])
   tmp_pct_r <- c(tmp_pct[index_y, index_r])
-  split_var <- NA
   if (!is.null(split.by)) {
     split_var <- sapply(X = tmp_idents, FUN = `[[`, 3)
-    # split_var <- factor(x = split_var, levels = levels(lr_data[[split.by]]))
     cell_prop <- round(prop.table(cell_counts, margin = 1), 3)*100
     tmp_count_l <- mapply(
-      FUN = function(x,y) cell_prop[x,y],
-      ligand_cell,
-      split_var
+      FUN = Get_Cell_Proportion,
+      cell.type = ligand_cell,
+      split.var = split_var,
+      MoreArgs = list(cell.table = cell_prop)
     )
     tmp_count_r <- mapply(
-      FUN = function(x,y) cell_prop[x,y],
-      receptor_cell,
-      split_var
+      FUN = Get_Cell_Proportion,
+      cell.type = receptor_cell,
+      split.var = split_var,
+      MoreArgs = list(cell.table = cell_prop)
     )
   }
 
@@ -377,21 +384,14 @@ CalculateScorePvals <- function(
   lr.data.receptors,
   resample,
   l.count,
-  r.count
+  r.count,
+  Sample_Random_Cells,
+  Get_Pvals
 ) {
-  # require('dplyr')
-  # Util function for generating 'resample'-length vector with 'count' number
-  # of TRUE indices.
-  cell_sample <- function(sample.count, total.count) {
-    tmp <- rep(FALSE, times = total.count)
-    tmp[sample(x = total.count, size = sample.count, replace = FALSE)] <- TRUE
-    return(tmp)
-  }
-
   null_index_x <- t(
     x = replicate(
       n = resample,
-      expr = cell_sample(
+      expr = Sample_Random_Cells(
         sample.count = l.count,
         total.count = total.count
       )
@@ -400,7 +400,7 @@ CalculateScorePvals <- function(
   null_index_y <- t(
     x = replicate(
       n = resample,
-      expr = cell_sample(
+      expr = Sample_Random_Cells(
         sample.count = r.count,
         total.count = total.count
       )
@@ -416,14 +416,40 @@ CalculateScorePvals <- function(
   names(null_scores) <- paste(colnames(null_avg_lig),
                               colnames(null_avg_rec),
                               sep = '_')
-
   pvals <- mapply(
-    FUN = function(nulls, score) {
-      return(1 - ecdf(nulls)(score))
-    },
+    FUN = Get_Pvals,
     nulls = null_scores,
     score = exp.scores
   )
 
   return(pvals)
+}
+
+
+Sample_Random_Cells <- function(
+  sample.count,
+  total.count
+) {
+  tmp <- rep(FALSE, times = total.count)
+  tmp[sample(x = total.count, size = sample.count, replace = FALSE)] <- TRUE
+  return(tmp)
+}
+
+
+Get_Pvals <- function(
+  nulls,
+  score
+) {
+  pval <- 1 - (ecdf(nulls)(score))
+  return(pval)
+}
+
+
+Get_Cell_Proportion <- function(
+  cell.table,
+  cell.type,
+  split.var
+) {
+  prop <- cell.table[cell.type, split.var]
+  return(prop)
 }
