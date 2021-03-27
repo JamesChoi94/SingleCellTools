@@ -5,8 +5,9 @@
 #'
 #' @import dplyr
 #' @import tibble
+#' @import data.table
 #' @importFrom rlang "!!"
-#' @importFrom BiocParallel bpmapply
+#' @importFrom BiocParallel bpmapply\
 #'
 #'
 #' @param seurat.object Seurat object containing RNA expression data.
@@ -257,8 +258,12 @@ StandardLR2 <- function(
   # used for random sampling of cells (via matrix multiplication). Reformat the
   # lr_data data.frame to data.table before setting matrix to allow duplicated
   # column names (gene names)
-  lr_data_ligands <- as.matrix(as.data.table(lr_data)[, ..ligand_genes])
-  lr_data_receptors <- as.matrix(as.data.table(lr_data)[, ..receptor_genes])
+  lr_data_ligands <- as.matrix(
+    x = data.table::as.data.table(lr_data)[, ..ligand_genes]
+  )
+  lr_data_receptors <- as.matrix(
+    x = data.table::as.data.table(lr_data)[, ..receptor_genes]
+  )
 
   # pvals <- CalculateScorePvals(
   #   exp.scores = exp_scores,
