@@ -259,10 +259,10 @@ StandardLR2 <- function(
   # lr_data data.frame to data.table before setting matrix to allow duplicated
   # column names (gene names)
   lr_data_ligands <- as.matrix(
-    x = data.table::as.data.table(lr_data)[, ..ligand_genes]
+    x = data.table::as.data.table(lr_data)[, ligand_genes, with = FALSE]
   )
   lr_data_receptors <- as.matrix(
-    x = data.table::as.data.table(lr_data)[, ..receptor_genes]
+    x = data.table::as.data.table(lr_data)[, receptor_genes, with = FALSE]
   )
 
   # pvals <- CalculateScorePvals(
