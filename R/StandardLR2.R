@@ -305,8 +305,8 @@ StandardLR2 <- function(
 
   # Long-form data.table of results
   exp_scores <- data.frame(exp_scores)
-  tmp <- expand.grid(rownames(exp_scores),
-                     colnames(exp_scores),
+  tmp <- expand.grid(colnames(exp_scores),
+                     rownames(exp_scores),
                      stringsAsFactors = FALSE)
   tmp <- as.data.frame(
     x = lapply(
@@ -316,8 +316,8 @@ StandardLR2 <- function(
       replacement = '-'
     )
   )
-  tmp_pairs <- strsplit(x = tmp[[1]], split = '_')
-  tmp_idents <- strsplit(x = tmp[[2]], split = '_')
+  tmp_pairs <- strsplit(x = tmp[[2]], split = '_')
+  tmp_idents <- strsplit(x = tmp[[1]], split = '_')
   ligand_cell <- sapply(X = tmp_idents, FUN = `[[`, 1)
   receptor_cell <- sapply(X = tmp_idents, FUN = `[[`, 2)
   ligand <- sapply(X = tmp_pairs, FUN = `[[`, 1)
