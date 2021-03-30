@@ -186,9 +186,9 @@ StandardLR2 <- function(
   # Generate all possible combinations of cell-type pairs (and split.by). Create
   # columns with cell-type counts for permutation test sampling.
   if (!is.null(split.by)) {
-    var_set <- expand.grid(unique(lr_data[['active_idents']]),
-                           unique(lr_data[['active_idents']]),
-                           unique(lr_data[[split.by]]),
+    var_set <- expand.grid(sort(unique(lr_data[['active_idents']])),
+                           sort(unique(lr_data[['active_idents']])),
+                           sort(unique(lr_data[[split.by]])),
                            stringsAsFactors = FALSE)
     colnames(var_set) <- c('Ligand_cell', 'Receptor_cell', 'split.by')
     cell_counts <- table(
@@ -196,8 +196,8 @@ StandardLR2 <- function(
       slot(object = seurat.object, name = 'meta.data')[[split.by]]
     )
   } else {
-    var_set <- expand.grid(unique(lr_data[['active_idents']]),
-                           unique(lr_data[['active_idents']]),
+    var_set <- expand.grid(sort(unique(lr_data[['active_idents']])),
+                           sort(unique(lr_data[['active_idents']])),
                            stringsAsFactors = FALSE)
     colnames(var_set) <- c('Ligand_cell', 'Receptor_cell')
     cell_counts <- table(slot(object = seurat.object, name = 'active.ident'))
@@ -436,7 +436,8 @@ Sample_Random_Cells <- function(
   total.count
 ) {
   tmp <- rep(FALSE, times = total.count)
-  tmp[sample(x = total.count, size = sample.count, replace = FALSE)] <- TRUE
+  tmp_switch <- sample(x = total.count, size = sample.count, replace = FALSE)
+  tmp[tmp_switch] <- TRUE
   return(tmp)
 }
 
@@ -445,7 +446,7 @@ Get_Pvals <- function(
   nulls,
   score
 ) {
-  pval <- 1 - (ecdf(nulls)(score))
+  pval <- 1 - (sum(score >= nulls)/length(nulls))
   return(pval)
 }
 
