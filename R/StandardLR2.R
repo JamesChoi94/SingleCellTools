@@ -6,7 +6,7 @@
 #' @import dplyr
 #' @import tibble
 #' @import data.table
-#' @importFrom rlang "!!" "`%||%`"
+#' @importFrom rlang "!!" "%||%"
 #' @importFrom BiocParallel bpmapply
 #'
 #'
