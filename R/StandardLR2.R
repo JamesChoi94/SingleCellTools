@@ -6,17 +6,17 @@
 #' @import dplyr
 #' @import tibble
 #' @import data.table
-#' @importFrom rlang "!!"
-#' @importFrom BiocParallel bpmapply\
+#' @importFrom rlang "!!" "%||%"
+#' @importFrom BiocParallel bpmapply
 #'
 #'
 #' @param seurat.object Seurat object containing RNA expression data.
-#' @param ref.path Character string of path to ligand-receptor pair reference
+#' @param lr.ref.path Character string of path to ligand-receptor pair reference
 #' list. LR pair reference must contain a column labeled "Pair.Name" with values
 #' for each LR pair. If \code{NULL}, \code{lr.ref} must be provided.
 #' @param lr.ref Data.frame of ligand-receptor pair reference. Must contain a
 #' column labeled "Pair.Name" with values for each LR pair. If \code{NULL},
-#' \code{ref.path} must be provided.
+#' \code{lr.ref.path} must be provided.
 #' @param split.by Character string of a column name in
 #' \code{slot(tmp,'meta.data')} by which to split cells before calculating LR
 #' scores e.g. across multiple conditions or time-points.
@@ -50,14 +50,17 @@
 
 StandardLR2 <- function(
   seurat.object,
-  ref.path = NULL,
   lr.ref = NULL,
+  lr.ref.path = NULL,
   split.by = NULL,
   min.pct = 0.1,
   assay = "RNA",
   slot = "data",
   resample = 1000,
   adjust.pval = FALSE,
+  ligand.cells = NULL,
+  receptor.cells = NULL,
+  split.vars = NULL,
   BPPARAM = bpparam()
 ) {
 
@@ -71,9 +74,9 @@ StandardLR2 <- function(
     stop('assay \"', assay, '\" cannot be found in any slots of Seurat object.')
   }
 
-  # 'ref.path' or 'lr.ref' check
-  if (is.null(ref.path) && is.null(lr.ref)) {
-    stop(strwrap('Must provide either \"ref.path\" (path of LR reference) or
+  # 'lr.ref.path' or 'lr.ref' check
+  if (is.null(lr.ref.path) && is.null(lr.ref)) {
+    stop(strwrap('Must provide either \"lr.ref.path\" (path of LR reference) or
     \"lr.ref\" (data.frame of imported LR reference).', prefix = ' '))
   }
 
@@ -81,8 +84,8 @@ StandardLR2 <- function(
   if (!is.null(lr.ref)) {
     lr_ref <- lr.ref
   }
-  if(!is.null(ref.path)) {
-    lr_ref <- read.csv(file = ref.path, stringsAsFactors = FALSE)
+  if(!is.null(lr.ref.path)) {
+    lr_ref <- read.csv(file = lr.ref.path, stringsAsFactors = FALSE)
   }
 
   # Check for Pair.Name column. Error if not present.
@@ -91,7 +94,7 @@ StandardLR2 <- function(
     \"Pair.Name\". Entries in \"Pair.Name\" should be formatted as: [Ligand
     gene]_[Receptor gene]. E.g. Apoe_Lrp1"', prefix = ' '))
   } else {
-    message('LR reference has ', nrow(lr_ref), ' rows (LR pairs).')
+    print('LR reference has ', nrow(lr_ref), ' rows (LR pairs).')
   }
 
   # Message regarding use of seurat identities
@@ -104,8 +107,20 @@ StandardLR2 <- function(
                     spaces). Replace with "_".', prefix = ' '))
   }
   tmp_idents <- paste(unique(active_idents), collapse = ', ')
-  message(paste0('Using active identities: ', tmp_idents))
+  print(paste0('Using active identities: ', tmp_idents))
   rm(tmp_idents)
+
+  # Check if ligand_cells and receptor_cells are in active.idents.
+  if (!is.null(ligand.cells)) {
+    if (!all(ligand.cells %in% active_idents)) {
+      stop('Not all provided \"ligand.cells\" are in active.idents.')
+    }
+  }
+  if (!is.null(receptor.cells)) {
+    if (!all(receptor.cells %in% active_idents)) {
+      stop('Not all provided \"receptor.cells\" are in active.idents.')
+    }
+  }
 
   # Split Pair.Name into ligand and receptor names. Retain those that are
   # present in the expression data.
@@ -122,9 +137,12 @@ StandardLR2 <- function(
   } else {
     ligand_genes <- ligand_genes[ligand_present & receptor_present]
     receptor_genes <- receptor_genes[ligand_present & receptor_present]
-    message('Genes detected for ', nrow(lr_ref), ' LR pairs')
+    print('Genes detected for ', nrow(lr_ref), ' LR pairs')
   }
-  rm(tmp, ligand_present, receptor_present, all_genes)
+  suppressWarnings(rm(tmp, ligand_present, receptor_present, all_genes))
+
+  # Time-stamping
+  t1 <- Sys.time()
 
   # Extract data. Convert factor-type column variables to character-type.
   Seurat::DefaultAssay(seurat.object) <- assay
@@ -139,9 +157,9 @@ StandardLR2 <- function(
     FUN = as.character
   )
   lr_data <- cbind(active_idents, lr_data)
-  message('Using expression values for ', ncol(lr_data)-1, ' genes across ',
+  print('Using expression values for ', ncol(lr_data)-1, ' genes across ',
           nrow(lr_data), ' cells.')
-  rm(active_idents)
+  suppressWarnings(rm(active_idents, is_factor))
 
   # Calculate average/percent expression for each gene, by "split.by" if
   # provided.
@@ -181,24 +199,22 @@ StandardLR2 <- function(
   ligand_genes <- ligand_genes[ligand_detected & receptor_detected]
   receptor_genes <- receptor_genes[ligand_detected & receptor_detected]
   lr_ref <- lr_ref[ligand_detected & receptor_detected,]
-  rm(minpct_genes)
+  suppressWarnings(rm(minpct_genes, ligand_detected, receptor_detected))
 
   # Generate all possible combinations of cell-type pairs (and split.by). Create
   # columns with cell-type counts for permutation test sampling.
+  var1 <- ligand.cells %||% sort(unique(lr_data[['active_idents']]))
+  var2 <- receptor.cells %||% sort(unique(lr_data[['active_idents']]))
   if (!is.null(split.by)) {
-    var_set <- expand.grid(sort(unique(lr_data[['active_idents']])),
-                           sort(unique(lr_data[['active_idents']])),
-                           sort(unique(lr_data[[split.by]])),
-                           stringsAsFactors = FALSE)
+    var3 <- split.vars %||% sort(unique(lr_data[[split.by]]))
+    var_set <- expand.grid(var1, var2, var3, stringsAsFactors = FALSE)
     colnames(var_set) <- c('Ligand_cell', 'Receptor_cell', 'split.by')
     cell_counts <- table(
       slot(object = seurat.object, name = 'active.ident'),
       slot(object = seurat.object, name = 'meta.data')[[split.by]]
     )
   } else {
-    var_set <- expand.grid(sort(unique(lr_data[['active_idents']])),
-                           sort(unique(lr_data[['active_idents']])),
-                           stringsAsFactors = FALSE)
+    var_set <- expand.grid(var1, var2, stringsAsFactors = FALSE)
     colnames(var_set) <- c('Ligand_cell', 'Receptor_cell')
     cell_counts <- table(slot(object = seurat.object, name = 'active.ident'))
   }
@@ -211,7 +227,7 @@ StandardLR2 <- function(
     var_set$Ligand_cell_count[i] <- cell_counts[tmp_row_lig, tmp_col]
     var_set$Receptor_cell_count[i] <- cell_counts[tmp_row_rec, tmp_col]
   }
-  rm(tmp_row_lig, tmp_row_rec, tmp_col)
+  suppressWarnings(rm(tmp_row_lig, tmp_row_rec, tmp_col, var1, var2, var3, i))
 
   # Calculate LR scores (for data, not nulls). Convert to list to vectorize.
   index_x <- var_set[['Ligand_cell']]
@@ -257,7 +273,7 @@ StandardLR2 <- function(
   # Extract individual matrices for ligand/receptor gene expression values to be
   # used for random sampling of cells (via matrix multiplication). Reformat the
   # lr_data data.frame to data.table before setting matrix to allow duplicated
-  # column names (gene names)
+  # column names (gene names).
   lr_data_ligands <- as.matrix(
     x = data.table::as.data.table(lr_data)[, ligand_genes, with = FALSE]
   )
@@ -265,16 +281,6 @@ StandardLR2 <- function(
     x = data.table::as.data.table(lr_data)[, receptor_genes, with = FALSE]
   )
 
-  # pvals <- CalculateScorePvals(
-  #   exp.scores = exp_scores,
-  #   total.count = list(nrow(lr_data)),
-  #   resample = list(resample),
-  #   lr.data.ligands = list(lr_data_ligands),
-  #   lr.data.receptors = list(lr_data_receptors),
-  #   l.count = var_set$Ligand_cell_count,
-  #   r.count = var_set$Receptor_cell_count,
-  #   BPPPARAM = BPPARAM
-  # )
   pvals <- Matrix::t(
     x = bpmapply(
       FUN = CalculateScorePvals,
@@ -292,16 +298,6 @@ StandardLR2 <- function(
       BPPARAM = BPPARAM
     )
   )
-
-  # CalculateScorePvals(
-  #   exp.scores = exp_scores[[1]],
-  #   total.count = nrow(lr_data),
-  #   resample = 1000,
-  #   lr.data.ligands = lr_data_ligands,
-  #   lr.data.receptors = lr_data_receptors,
-  #   l.count = var_set$Ligand_cell_count[1],
-  #   r.count = var_set$Receptor_cell_count[1]
-  # )
 
   # Long-form data.table of results
   exp_scores <- data.frame(exp_scores)
@@ -376,7 +372,12 @@ StandardLR2 <- function(
     results[['Ligand_cell_pct']] <- tmp_count_l
     results[['Receptor_cell_pct']] <- tmp_count_r
   }
-  message('Done!')
+
+  # Finish
+  t1 <- Sys.time() - t1
+  print('Done!')
+  print('Run time:')
+  print(t1)
   return(results)
 }
 
