@@ -6,14 +6,9 @@
 #' @import dplyr
 #' @import tibble
 #' @import data.table
-<<<<<<< HEAD
 #' @importFrom rlang "!!"
 #' @importFrom rlang "%||%"
-=======
-#' @importFrom rlang "!!" "%||%"
->>>>>>> 18476544976892d640f0587f81d32ae2a4d0448a
 #' @importFrom BiocParallel bpmapply
-#'
 #'
 #' @param seurat.object Seurat object containing RNA expression data.
 #' @param lr.ref.path Character string of path to ligand-receptor pair reference
