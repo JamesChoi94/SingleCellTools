@@ -7,7 +7,6 @@
 #' @import tibble
 #' @import data.table
 #' @importFrom rlang "!!"
-#' @importFrom rlang %||%
 #' @importFrom BiocParallel bpmapply
 #'
 #' @param seurat.object Seurat object containing RNA expression data.
@@ -203,10 +202,22 @@ StandardLR2 <- function(
 
   # Generate all possible combinations of cell-type pairs (and split.by). Create
   # columns with cell-type counts for permutation test sampling.
-  var1 <- ligand.cells %||% sort(unique(lr_data[['active_idents']]))
-  var2 <- receptor.cells %||% sort(unique(lr_data[['active_idents']]))
+  if (is.null(ligand.cells)) {
+    var1 <- sort(unique(lr_data[['active_idents']]))
+  } else {
+    var1 <- ligand.cells
+  }
+  if (is.null(receptor.cells)) {
+    var2 <- sort(unique(lr_data[['active_idents']]))
+  } else {
+    var2 <- receptor.cells
+  }
   if (!is.null(split.by)) {
-    var3 <- split.vars %||% sort(unique(lr_data[[split.by]]))
+    if (is.null(split.vars)) {
+      var3 <- sort(unique(lr_data[[split.by]]))
+    } else {
+      var3 <- split.vars
+    }
     var_set <- expand.grid(var1, var2, var3, stringsAsFactors = FALSE)
     colnames(var_set) <- c('Ligand_cell', 'Receptor_cell', 'split.by')
     cell_counts <- table(
