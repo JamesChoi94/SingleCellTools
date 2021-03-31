@@ -94,7 +94,7 @@ StandardLR2 <- function(
     \"Pair.Name\". Entries in \"Pair.Name\" should be formatted as: [Ligand
     gene]_[Receptor gene]. E.g. Apoe_Lrp1"', prefix = ' '))
   } else {
-    print('LR reference has ', nrow(lr_ref), ' rows (LR pairs).')
+    print(paste0('LR reference has ', nrow(lr_ref), ' rows (LR pairs).'))
   }
 
   # Message regarding use of seurat identities
@@ -137,7 +137,7 @@ StandardLR2 <- function(
   } else {
     ligand_genes <- ligand_genes[ligand_present & receptor_present]
     receptor_genes <- receptor_genes[ligand_present & receptor_present]
-    print('Genes detected for ', nrow(lr_ref), ' LR pairs')
+    print(paste0('Genes detected for ', nrow(lr_ref), ' LR pairs'))
   }
   suppressWarnings(rm(tmp, ligand_present, receptor_present, all_genes))
 
@@ -157,8 +157,8 @@ StandardLR2 <- function(
     FUN = as.character
   )
   lr_data <- cbind(active_idents, lr_data)
-  print('Using expression values for ', ncol(lr_data)-1, ' genes across ',
-          nrow(lr_data), ' cells.')
+  print(paste0('Using expression values for ', ncol(lr_data)-1, ' genes across ',
+          nrow(lr_data), ' cells.'))
   suppressWarnings(rm(active_idents, is_factor))
 
   # Calculate average/percent expression for each gene, by "split.by" if
