@@ -6,8 +6,12 @@
 #' @import dplyr
 #' @import tibble
 #' @import data.table
+<<<<<<< HEAD
 #' @importFrom rlang "!!"
 #' @importFrom rlang "%||%"
+=======
+#' @importFrom rlang "!!" "%||%"
+>>>>>>> 18476544976892d640f0587f81d32ae2a4d0448a
 #' @importFrom BiocParallel bpmapply
 #'
 #'
