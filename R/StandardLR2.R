@@ -7,7 +7,7 @@
 #' @import tibble
 #' @import data.table
 #' @importFrom rlang "!!"
-#' @importFrom rlang "%||%"
+#' @importFrom rlang %||%
 #' @importFrom BiocParallel bpmapply
 #'
 #' @param seurat.object Seurat object containing RNA expression data.
