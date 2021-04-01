@@ -10,25 +10,40 @@
 #' @importFrom BiocParallel bpmapply
 #'
 #' @param seurat.object Seurat object containing RNA expression data.
-#' @param lr.ref.path Character string of path to ligand-receptor pair reference
-#' list. LR pair reference must contain a column labeled "Pair.Name" with values
-#' for each LR pair. If \code{NULL}, \code{lr.ref} must be provided.
 #' @param lr.ref Data.frame of ligand-receptor pair reference. Must contain a
 #' column labeled "Pair.Name" with values for each LR pair. If \code{NULL},
 #' \code{lr.ref.path} must be provided.
+#' @param lr.ref.path Character string of path to ligand-receptor pair reference
+#' list. LR pair reference must contain a column labeled "Pair.Name" with values
+#' for each LR pair. If \code{NULL}, \code{lr.ref} must be provided.
 #' @param split.by Character string of a column name in
 #' \code{slot(tmp,'meta.data')} by which to split cells before calculating LR
-#' scores e.g. across multiple conditions or time-points.
+#' scores e.g. across multiple conditions or time-points. If \code{NULL}, no
+#' splitting is done.
 #' @param min.pct Numeric minimum percentage a ligand or receptor gene must be
 #' expressed in any cell cluster to be retained for LR scoring. Note: scores
 #' will still be calculated between pairs where one cluster expresses at 15% and
 #'  the other at 0%. These scores should be filtered out at visualization
 #' (see: \code{\link{PlotLR}}).
 #' @param assay Character string to select which assay slot of Seurat object to
-#' use.
+#' use. Default is "RNA" slot.
+#' @param slot Character string to select which slot of the provided to assay
+#' to extract values (e.g. counts, data, scaled.data). Default is "data" slot.
 #' @param resample Numeric number of times to sample cells for permutation test.
+#' Default is 1000.
 #' @param adjust.pval Logical determining whether to perform max-T p-value
-#' adjustment.
+#' adjustment. Default is TRUE.
+#' @param ligand.cells Character vector of cell-types to scared as the ligand
+#' expressing cell-type e.g. c("Macrophage","Microglia"). If \code{NULL}, use
+#' all cell-types.
+#' @param receptor.cells Character vector of cell-types to scared as the
+#' receptor expressing cell-type e.g. c("Macrophage","Microglia"). If
+#' \code{NULL}, use all cell-types.
+#' @param split.vars Character vector of subset of "split.by" variable e.g. if
+#' split.by = "time", then split.vars = c("Uninjured","1dpi'). If \code{NULL},
+#' use all values of "split.by".
+#' @param BPPARAM Instance of \code{BiocParallelParam} class for back-ends.
+#' Default is first entry of \code{BiocParallel::registered()}.
 #'
 #' @return A data.frame containing results of the standard ligand-receptor
 #' analysis. The columns of the data.frame as as follow:
