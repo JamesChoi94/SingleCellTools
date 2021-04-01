@@ -93,7 +93,7 @@ StandardLR2 <- function(
     \"Pair.Name\". Entries in \"Pair.Name\" should be formatted as: [Ligand
     gene]_[Receptor gene]. E.g. Apoe_Lrp1"', prefix = ' '))
   } else {
-    print(paste0('LR reference has ', nrow(lr_ref), ' rows (LR pairs).'))
+    message(paste0('LR reference has ', nrow(lr_ref), ' rows (LR pairs).'))
   }
 
   # Message regarding use of seurat identities
@@ -106,7 +106,7 @@ StandardLR2 <- function(
                     spaces). Replace with "_".', prefix = ' '))
   }
   tmp_idents <- paste(unique(active_idents), collapse = ', ')
-  print(paste0('Using active identities: ', tmp_idents))
+  message(paste0('Using active identities: ', tmp_idents))
   rm(tmp_idents)
 
   # Check if ligand_cells and receptor_cells are in active.idents.
@@ -136,7 +136,7 @@ StandardLR2 <- function(
   } else {
     ligand_genes <- ligand_genes[ligand_present & receptor_present]
     receptor_genes <- receptor_genes[ligand_present & receptor_present]
-    print(paste0('Genes detected for ', nrow(lr_ref), ' LR pairs'))
+    message(paste0('Genes detected for ', nrow(lr_ref), ' LR pairs'))
   }
   suppressWarnings(rm(tmp, ligand_present, receptor_present, all_genes))
 
@@ -156,7 +156,7 @@ StandardLR2 <- function(
     FUN = as.character
   )
   lr_data <- cbind(active_idents, lr_data)
-  print(paste0('Using expression values for ', ncol(lr_data)-1, ' genes across ',
+  message(paste0('Using expression values for ', ncol(lr_data)-1, ' genes across ',
           nrow(lr_data), ' cells.'))
   suppressWarnings(rm(active_idents, is_factor))
 
@@ -254,13 +254,11 @@ StandardLR2 <- function(
   index_l <- match(ligand_genes, colnames(exp_avg))
   index_r <- match(receptor_genes, colnames(exp_avg))
   exp_avg_lig <- as.matrix(exp_avg[index_x, index_l])
+  rownames(exp_avg_lig) <- var_set[['Ligand_cell']]
   exp_avg_rec <- as.matrix(exp_avg[index_y, index_r])
+  rownames(exp_avg_rec) <- var_set[['Receptor_cell']]
   exp_scores <- 1/2 * (exp_avg_lig + exp_avg_rec)
-  exp_scores <- split(
-    x = exp_scores,
-    f = rep(1:nrow(exp_scores), each = ncol(exp_scores))
-  )
-  names(exp_scores) <- apply(
+  rownames(exp_scores) <- apply(
     X = var_set,
     MARGIN = 1,
     FUN = function(x) {
@@ -271,15 +269,8 @@ StandardLR2 <- function(
       }
     }
   )
-  exp_scores <- lapply(
-    X = exp_scores,
-    FUN = function(x) {
-      names(x) <- paste(colnames(exp_avg_lig),
-                        colnames(exp_avg_rec),
-                        sep = '_')
-      return(x)
-    }
-  )
+  colnames(exp_scores) <- paste(colnames(exp_avg_lig), colnames(exp_avg_rec),
+                                sep = '_')
 
   # Extract individual matrices for ligand/receptor gene expression values to be
   # used for random sampling of cells (via matrix multiplication). Reformat the
@@ -288,59 +279,100 @@ StandardLR2 <- function(
   lr_data_ligands <- as.matrix(
     x = data.table::as.data.table(lr_data)[, ligand_genes, with = FALSE]
   )
+  rownames(lr_data_ligands) <- rownames(lr_data)
   lr_data_receptors <- as.matrix(
     x = data.table::as.data.table(lr_data)[, receptor_genes, with = FALSE]
   )
+  rownames(lr_data_receptors) <- rownames(lr_data)
 
-  pvals <- Matrix::t(
-    x = bpmapply(
-      FUN = CalculateScorePvals,
-      exp.scores = exp_scores,
-      l.count = var_set$Ligand_cell_count,
-      r.count = var_set$Receptor_cell_count,
-      MoreArgs = list(
-        total.count = nrow(lr_data),
-        resample = resample,
-        lr.data.ligands = lr_data_ligands,
-        lr.data.receptors = lr_data_receptors,
-        Sample_Random_Cells = Sample_Random_Cells,
-        Get_Pvals
-      ),
-      BPPARAM = BPPARAM
+  message('Generating null distributions...')
+  null_scores <- bpmapply(
+    FUN = GenerateNulls,
+    l.count = var_set$Ligand_cell_count,
+    r.count = var_set$Receptor_cell_count,
+    MoreArgs = list(
+      total.count = nrow(lr_data),
+      resample = resample,
+      lr.data.ligands = lr_data_ligands,
+      lr.data.receptors = lr_data_receptors,
+      Sample_Random_Cells = Sample_Random_Cells
+    ),
+    BPPARAM = BPPARAM
+  ) # [resample, lr_pairs, cell_pairs]
+
+  message('Calculating p-values...')
+  pvals <- vector(mode = 'list', length = nrow(var_set))
+  for (i in 1:length(pvals)) {
+    pvals[[i]] <- mapply(
+      exp.score = exp_scores[i,],
+      null.scores = as.data.frame(null_scores[,,i]),
+      FUN = CalculatePvals
     )
-  )
+  }
+  names(pvals) <- rownames(exp_scores)
+
+  if (adjust.pval) {
+    adj_pvals <- vector(mode = 'list', length = nrow(var_set))
+    max_null <- null_scores[,,1]
+    for (i in 1:length(adj_pvals)) {
+      max_null[null_scores[,,i] > max_null] <- null_scores[,,i][null_scores[,,i] > max_null]
+    }
+    for (i in 1:nrow(var_set)) {
+      adj_pvals[[i]] <- mapply(
+        exp.score = exp_scores[i,],
+        null.scores = as.data.frame(max_null),
+        FUN = CalculatePvals
+      )
+    }
+    names(adj_pvals) <- rownames(exp_scores)
+  }
 
   # Long-form data.table of results
-  exp_scores <- data.frame(exp_scores)
-  tmp <- expand.grid(colnames(exp_scores),
-                     rownames(exp_scores),
-                     stringsAsFactors = FALSE)
-  tmp <- as.data.frame(
-    x = lapply(
-      X = tmp,
-      FUN = gsub,
+  exp_scores <- data.frame(exp_scores, stringsAsFactors = FALSE) %>%
+    reshape2::melt()
+  pvals <- t(data.frame(pvals, stringsAsFactors = FALSE)) %>%
+    reshape2::melt()
+  exp_avg_lig <- exp_avg_lig %>% reshape2::melt()
+  exp_avg_rec <- exp_avg_rec %>% reshape2::melt()
+  exp_pct_lig <- exp_pct[index_x, index_l] %>% reshape2::melt()
+  exp_pct_rec <- exp_pct[index_y, index_r] %>% reshape2::melt()
+
+  tmp_idents <- strsplit(
+    x = gsub(
       pattern = '\\.',
-      replacement = '-'
-    )
+      replacement = '-',
+      x = pvals[['Var1']]
+    ),
+    split = '_'
   )
-  tmp_pairs <- strsplit(x = tmp[[2]], split = '_')
-  tmp_idents <- strsplit(x = tmp[[1]], split = '_')
+  tmp_pairs <- strsplit(
+    x = gsub(
+      pattern = '\\.',
+      replacement = '-',
+      x = pvals[['Var2']]
+    ),
+    split = '_'
+  )
   ligand_cell <- sapply(X = tmp_idents, FUN = `[[`, 1)
   receptor_cell <- sapply(X = tmp_idents, FUN = `[[`, 2)
   ligand <- sapply(X = tmp_pairs, FUN = `[[`, 1)
   receptor <- sapply(X = tmp_pairs, FUN = `[[`, 2)
   cell_pair <- paste(ligand_cell, receptor_cell, sep = '_')
   lr_pair <- paste(ligand, receptor, sep = '_')
-  tmp_scores <- exp_scores %>% reshape2::melt() %>% .[['value']]
-  tmp_avg_l <- c(exp_avg_lig)
-  tmp_avg_r <- c(exp_avg_rec)
-  tmp_pvals <- pvals %>% reshape2::melt() %>% .[['value']]
+  tmp_scores <- exp_scores[['value']]
+  tmp_pvals <- pvals[['value']]
+  tmp_avg_l <- exp_avg_lig[['value']]
+  tmp_avg_r <- exp_avg_rec[['value']]
+  tmp_pct_l <- exp_pct_lig[['value']]
+  tmp_pct_r <- exp_pct_rec[['value']]
   if (adjust.pval) {
-    tmp_adj_pvals <- adj_pvals %>% reshape2::melt() %>% .[['value']]
+    adj_pvals <- t(data.frame(adj_pvals, stringsAsFactors = FALSE)) %>%
+      reshape2::melt()
+    tmp_adj_pvals <- adj_pvals[['value']]
+  } else {
+    tmp_adj_pvals <- NA
   }
-  tmp_pct <- exp_pct %>% as.matrix()
-  tmp_pct_l <- c(tmp_pct[index_x, index_l])
-  tmp_pct_r <- c(tmp_pct[index_y, index_r])
+
   if (!is.null(split.by)) {
     split_var <- sapply(X = tmp_idents, FUN = `[[`, 3)
     cell_prop <- round(prop.table(cell_counts, margin = 1), 3)*100
@@ -363,9 +395,7 @@ StandardLR2 <- function(
     'Pair_name' = lr_pair,
     'Score' = tmp_scores,
     'pval' = tmp_pvals,
-    'adj_pval' = ifelse(test = exists('tmp_adj_pvals'),
-                        yes = tmp_adj_pvals,
-                        no = NA),
+    'adj_pval' = tmp_adj_pvals,
     'Ligand_cell' = ligand_cell,
     'Receptor_cell' = receptor_cell,
     'split.by' = split_var,
@@ -386,26 +416,23 @@ StandardLR2 <- function(
 
   # Finish
   t1 <- Sys.time() - t1
-  print('Done!')
-  print('Run time:')
+  message('Done!')
+  message('Run time:')
   print(t1)
   return(results)
 }
 
 
-
-CalculateScorePvals <- function(
-  exp.scores,
-  total.count,
-  lr.data.ligands,
-  lr.data.receptors,
+GenerateNulls <- function(
   resample,
+  total.count,
   l.count,
   r.count,
-  Sample_Random_Cells,
-  Get_Pvals
+  lr.data.ligands,
+  lr.data.receptors,
+  Sample_Random_Cells
 ) {
-  null_index_x <- t(
+  null_index_x <- t( # nrow = resample, ncol = nrow(lr_data)
     x = replicate(
       n = resample,
       expr = Sample_Random_Cells(
@@ -425,21 +452,18 @@ CalculateScorePvals <- function(
   )
   null_avg_lig <- (null_index_x %*% lr.data.ligands) / l.count
   null_avg_rec <- (null_index_y %*% lr.data.receptors) / r.count
-  null_scores <- 0.5 * (null_avg_lig + null_avg_rec)
-  null_scores <- split(
-    x = null_scores,
-    f = rep(1:ncol(null_scores), each = nrow(null_scores))
-  )
-  names(null_scores) <- paste(colnames(null_avg_lig),
-                              colnames(null_avg_rec),
-                              sep = '_')
-  pvals <- mapply(
-    FUN = Get_Pvals,
-    nulls = null_scores,
-    score = exp.scores
-  )
+  null_scores <- 0.5 * (null_avg_lig + null_avg_rec) # nrow = resample, ncol = # lr pairs
 
-  return(pvals)
+  return(null_scores)
+}
+
+
+CalculatePvals <- function(
+  null.scores,
+  exp.score
+) {
+  p <- 1 - (sum(exp.score >= null.scores) / length(null.scores))
+  return(p)
 }
 
 
@@ -451,15 +475,6 @@ Sample_Random_Cells <- function(
   tmp_switch <- sample(x = total.count, size = sample.count, replace = FALSE)
   tmp[tmp_switch] <- TRUE
   return(tmp)
-}
-
-
-Get_Pvals <- function(
-  nulls,
-  score
-) {
-  pval <- 1 - (sum(score >= nulls)/length(nulls))
-  return(pval)
 }
 
 
